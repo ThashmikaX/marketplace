@@ -2,7 +2,7 @@
   "name": "sudesh-marketplace",
   "description": "Private DIPS plugin marketplace for Claude Code skills.",
   "owner": {
-    "name": "DIPS AS"
+    "name": "Sudesh"
   },
   "plugins": [
     {
