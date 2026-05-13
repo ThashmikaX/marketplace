@@ -1,0 +1,10 @@
+{
+  "name": "k8s-debug",
+  "version": "0.1.0",
+  "description": "Kubernetes cluster debugging skill. Safe, read-first investigation of pod failures, resource pressure, network issues, and cluster health using local kubeconfigs.",
+  "author": {
+    "name": "DIPS AS"
+  },
+  "keywords": ["kubernetes", "k8s", "kubectl", "debugging", "pods", "cluster", "kubeconfig"],
+  "license": "UNLICENSED"
+}
