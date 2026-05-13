@@ -1,0 +1,10 @@
+{
+  "name": "DIPS Marketplace",
+  "description": "Private DIPS plugin marketplace for Claude Code skills.",
+  "plugins": [
+    {
+      "name": "k8s-debug",
+      "path": "k8s-debug"
+    }
+  ]
+}

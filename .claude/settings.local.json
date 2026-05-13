@@ -4,7 +4,8 @@
       "Bash(Get-ChildItem -Path \"D:\\\\DIPS\\\\my-repos\\\\marketplace\" -Recurse -Force)",
       "Bash(Select-Object FullName)",
       "Bash(Sort-Object FullName)",
-      "Bash(git init *)"
+      "Bash(git init *)",
+      "Bash(not exist *)"
     ]
   }
 }
