@@ -1,6 +1,9 @@
 {
-  "name": "DIPS Marketplace",
+  "name": "dips-marketplace",
   "description": "Private DIPS plugin marketplace for Claude Code skills.",
+  "owner": {
+    "name": "DIPS AS"
+  },
   "plugins": [
     {
       "name": "k8s-debug",
