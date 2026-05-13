@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "k8s-debug",
-      "path": "k8s-debug"
+      "source": "./k8s-debug"
     }
   ]
 }
