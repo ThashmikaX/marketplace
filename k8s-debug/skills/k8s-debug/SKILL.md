@@ -86,26 +86,28 @@ https://argocd.smud.slaks.dipscloudsl.com/applications/argocd/notificationcenter
 
 ### Resolution steps
 
-1. **Parse the cluster name** from position 3 of the hostname (0-indexed):
+1. **Run `get-contexts` first** — always do this immediately when an ArgoCD URL is provided, before any other action:
+   ```bash
+   kubectl config get-contexts
+   ```
+   This gives you the full list of available local contexts to work with.
+
+2. **Parse the cluster name** from position 3 of the hostname (0-indexed):
    ```
    hostname segments: argocd . smud . slaks . dipscloudsl . com
    index:               0       1       2         3           4
    → cluster name = segment[2]
    ```
 
-2. **List local contexts** and find one that contains the cluster name as a substring:
-   ```bash
-   kubectl config get-contexts
-   ```
-   Look for a context whose name contains `slaks` (case-insensitive).
+3. **Match against the context list** — find a context whose name contains the extracted cluster name as a substring (case-insensitive).
 
-3. **Confirm the match with the user** — show them:
+4. **Confirm the match with the user** — show them:
    - Extracted cluster name: `slaks`
    - Matched local context: `<context-name>`
    - If multiple contexts match, list them all and ask which to use.
    - If no context matches, tell the user and ask them to provide the correct context.
 
-4. **Use the matched context** for all subsequent kubectl commands via `--context <matched-context>`.
+5. **Use the matched context** for all subsequent kubectl commands via `--context <matched-context>`.
 
 ### Example resolution
 
