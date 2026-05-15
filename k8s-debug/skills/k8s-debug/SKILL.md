@@ -9,7 +9,10 @@ description: >
   starting", "service not reachable", "resource limits", "evicted pods",
   "kubeconfig", "switch cluster", "which context". Also trigger when the user
   asks about Kubernetes events, resource usage, Helm release status, or wants
-  to inspect anything running in a cluster.
+  to inspect anything running in a cluster. Also trigger when the user provides
+  an ArgoCD URL (argocd.*.dipscloudsl.com) for a degraded or unhealthy
+  application — extract the cluster name from the URL subdomain and resolve it
+  to the correct local kubectl context.
 ---
 
 # Kubernetes Cluster Debugging
@@ -60,6 +63,64 @@ kubectl config get-contexts
 **Always use `--context` and `--namespace` flags explicitly** in commands you
 run for the user — never rely on the ambient default silently targeting the
 wrong cluster.
+
+---
+
+## ArgoCD URL → local context resolution
+
+When the user provides an ArgoCD URL, extract the cluster name from the subdomain and match it to a local kubectl context **before running any commands**.
+
+### URL pattern
+
+```
+https://argocd.smud.<cluster-name>.dipscloudsl.com/applications/...
+                     ^^^^^^^^^^^^
+                     extract this segment
+```
+
+**Example:**
+```
+https://argocd.smud.slaks.dipscloudsl.com/applications/argocd/notificationcenter-development-aks-sldev-ak01
+                     ^^^^^ → cluster name: slaks
+```
+
+### Resolution steps
+
+1. **Parse the cluster name** from position 3 of the hostname (0-indexed):
+   ```
+   hostname segments: argocd . smud . slaks . dipscloudsl . com
+   index:               0       1       2         3           4
+   → cluster name = segment[2]
+   ```
+
+2. **List local contexts** and find one that contains the cluster name as a substring:
+   ```bash
+   kubectl config get-contexts
+   ```
+   Look for a context whose name contains `slaks` (case-insensitive).
+
+3. **Confirm the match with the user** — show them:
+   - Extracted cluster name: `slaks`
+   - Matched local context: `<context-name>`
+   - If multiple contexts match, list them all and ask which to use.
+   - If no context matches, tell the user and ask them to provide the correct context.
+
+4. **Use the matched context** for all subsequent kubectl commands via `--context <matched-context>`.
+
+### Example resolution
+
+```
+ArgoCD URL:  https://argocd.smud.slaks.dipscloudsl.com/applications/argocd/notificationcenter-development-aks-sldev-ak01
+Cluster:     slaks
+Local match: aks-sldev-ak01  (or whichever context contains "slaks")
+```
+
+```bash
+# Verify the matched context resolves correctly
+kubectl get nodes --context <matched-context>
+```
+
+> Never assume the context — always show the user the extracted cluster name and the matched context before proceeding.
 
 ---
 
