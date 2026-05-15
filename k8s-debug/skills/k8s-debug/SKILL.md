@@ -100,12 +100,14 @@ https://argocd.smud.slaks.dipscloudsl.com/applications/argocd/notificationcenter
    ```
 
 3. **Match against the context list** — find a context whose name contains the extracted cluster name as a substring (case-insensitive).
+   - **The hostname cluster name is the only source of truth.** Do NOT use the application name from the URL path (e.g. `notificationcenter-development-aks-sldev-ak01`) to infer or guess the cluster — the app name is an ArgoCD application identifier, not a cluster identifier.
+   - Example: URL `argocd.smud.slaks.dipscloudsl.com` → cluster `slaks` → match contexts containing `slaks` (e.g. `aks-slaks-admin`, `slaks@admin`). Ignore that the app name may contain `sldev` or any other string.
 
 4. **Confirm the match with the user** — show them:
    - Extracted cluster name: `slaks`
    - Matched local context: `<context-name>`
    - If multiple contexts match, list them all and ask which to use.
-   - If no context matches, tell the user and ask them to provide the correct context.
+   - If no context matches, **stop and ask the user** — do not fall back to guessing from the app name or any other part of the URL.
 
 5. **Use the matched context** for all subsequent kubectl commands via `--context <matched-context>`.
 
