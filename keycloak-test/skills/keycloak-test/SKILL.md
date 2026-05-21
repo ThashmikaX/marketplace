@@ -78,33 +78,7 @@ Stop and report if this times out or returns an error.
 
 ## Step 4 — Discover test scripts
 
-### Mode A — Local directory
-
-**Windows:**
-```powershell
-$scripts = Get-ChildItem -Path $localPath -Filter "*.sh" | Sort-Object Name
-if ($scripts.Count -eq 0) { Write-Error "No .sh files found in $localPath"; exit 1 }
-```
-
-**Linux/macOS:**
-```bash
-scripts=($(ls "$local_path"/*.sh 2>/dev/null | sort))
-[ ${#scripts[@]} -eq 0 ] && { echo "No .sh files found in $local_path"; exit 1; }
-```
-
-Show a preview before running:
-
-```
-Found 4 test scripts in <path>:
-  • test-group1-platform-health.sh  — Platform & Deployment Health
-  • test-group2-keycloak-core.sh    — Keycloak Core Health
-  • test-group3-db-cache.sh         — Database & Cache
-  • test-group4-oidc-discovery.sh   — OIDC Discovery & JWT
-```
-
-Read the first `# Group N — …` comment line from each `.sh` file for the description.
-
-### Mode B — ConfigMap discovery
+ConfigMap discovery
 
 ```powershell
 kubectl get cm -n iam -l app.kubernetes.io/component=test-scripts -o json --context <ctx>
@@ -145,11 +119,6 @@ Ensure `helpers.ps1` functions are loaded (Step 1), then read
 
 Build `$scriptEntries` from the discovered scripts:
 ```powershell
-# Local mode
-$scriptEntries = $scripts | ForEach-Object {
-    [PSCustomObject]@{ Name = $_.BaseName; Path = $_.FullName }
-}
-
 # ConfigMap mode — write each data key to a temp .sh file
 $scriptEntries = $cmData.Keys | Sort-Object | ForEach-Object {
     $tmpFile = [System.IO.Path]::GetTempFileName() + ".sh"

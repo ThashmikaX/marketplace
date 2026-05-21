@@ -1,6 +1,6 @@
 {
   "name": "keycloak-test",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Runs Keycloak test scripts from a local directory or cluster ConfigMaps against a selected kubectl context. Works natively on Windows (Git Bash), macOS, and Linux — no WSL required.",
   "author": {
     "name": "DIPS AS"
