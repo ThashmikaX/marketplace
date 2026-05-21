@@ -23,6 +23,10 @@ no WSL required.
 - **Git Bash** on Windows (`git-scm.com/download/win`) — or any POSIX `bash` on PATH
 - Test scripts at a local path **or** deployed as ConfigMaps in the `iam` namespace
 
+> **Timeout guidance**: Simple ConfigMap scripts → 30 s each. Full local test suites
+> (platform-health, keycloak-core, etc.) contain port-forward probes and can take
+> 2–5 minutes — use a **300 s** timeout for local scripts.
+
 ---
 
 ## Step 0 — Detect bash executable
@@ -300,10 +304,14 @@ foreach ($entry in $scriptEntries) {
 
     Write-Host "  Running $($entry.Name)..."
 
+    # Local scripts run full port-forward suites — allow up to 5 minutes.
+    # ConfigMap scripts are typically lightweight — keep 30 s.
+    $timeoutMs = if ($sourceMode -eq "local") { 300000 } else { 30000 }
+
     $r = if ($bashInfo.Type -eq "wsl") {
-        Invoke-WslBash    -ScriptPath $scriptPath -KubeconfigPath $tmpKubeconfig -KubectlContext $ctx
+        Invoke-WslBash -ScriptPath $scriptPath -KubeconfigPath $tmpKubeconfig -KubectlContext $ctx -TimeoutMs $timeoutMs
     } else {
-        Invoke-GitBash    -BashExe $bashInfo.Path -ScriptPath $scriptPath -KubeconfigPath $tmpKubeconfig -KubectlContext $ctx
+        Invoke-GitBash -BashExe $bashInfo.Path -ScriptPath $scriptPath -KubeconfigPath $tmpKubeconfig -KubectlContext $ctx -TimeoutMs $timeoutMs
     }
 
     if ($tmpFile) { Remove-Item $tmpFile -ErrorAction SilentlyContinue }
@@ -339,6 +347,23 @@ for script_path in "$local_path"/*.sh; do
     [ $exit_code -eq 124 ] && output="TIMEOUT after 30s"
     results+=("$name|$exit_code|$duration|$output")
 done
+```
+
+---
+
+## Step 5b — Strip ANSI escape codes from output
+
+Test scripts use hardcoded ANSI colour codes (e.g. `\033[0;32m`). Strip them before
+rendering the report so results display cleanly in Claude's output:
+
+```powershell
+function Remove-AnsiCodes([string]$text) {
+    # Matches ESC[ ... m sequences and bare ESC characters
+    $text -replace '\x1B\[[0-9;]*[mKHF]', '' -replace '\x1B', ''
+}
+
+# Apply after collecting each result:
+$r.Output = Remove-AnsiCodes $r.Output
 ```
 
 ---
