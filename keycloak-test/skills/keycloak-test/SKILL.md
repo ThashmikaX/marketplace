@@ -86,17 +86,6 @@ Present as a numbered list and ask:
 
 > Which cluster would you like to run Keycloak tests against?
 
-Then ask:
-
-> Run from (1) local script directory or (2) cluster ConfigMaps? [default: 1]
-
-If the user chooses **local**, also ask:
-
-> Path to test scripts directory?
-> (e.g. D:\DIPS\Repos\SMUD-IAM\keycloak-service\helm\test-scripts)
-
-Remember the path for the rest of the session so the user isn't asked again on re-runs.
-
 ---
 
 ## Step 2 — Verify cluster connectivity
