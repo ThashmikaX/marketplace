@@ -1,0 +1,10 @@
+{
+  "name": "keycloak-test",
+  "version": "0.1.0",
+  "description": "Discovers Keycloak test scripts stored as ConfigMaps in the iam namespace and runs them against a selected cluster, displaying results in a visual pass/fail report.",
+  "author": {
+    "name": "DIPS AS"
+  },
+  "keywords": ["keycloak", "iam", "testing", "configmap", "kubernetes", "k8s", "test-runner", "auth"],
+  "license": "UNLICENSED"
+}

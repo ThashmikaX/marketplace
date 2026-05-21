@@ -8,6 +8,10 @@
     {
       "name": "k8s-debug",
       "source": "./k8s-debug"
+    },
+    {
+      "name": "keycloak-test",
+      "source": "./keycloak-test"
     }
   ]
 }
