@@ -199,6 +199,8 @@ Duration : 4.3s
   Response: {"status":"DOWN","checks":[...]}
 ```
 
+Create simple html only UI to present the report with collapsible sections for failed test details. save it as `report.html` in the current directory. finally provide a link to open the report in the default browser. use dark theme with green for passes and red for failures. use company-logo.png as a header image at the top of the report.
+
 ---
 
 ## Running a single named test
