@@ -1,7 +1,7 @@
 {
   "name": "keycloak-test",
-  "version": "0.1.0",
-  "description": "Discovers Keycloak test scripts stored as ConfigMaps in the iam namespace and runs them against a selected cluster, displaying results in a visual pass/fail report.",
+  "version": "0.2.0",
+  "description": "Runs Keycloak test scripts from a local directory or cluster ConfigMaps against a selected kubectl context. Works natively on Windows (Git Bash), macOS, and Linux — no WSL required.",
   "author": {
     "name": "DIPS AS"
   },
