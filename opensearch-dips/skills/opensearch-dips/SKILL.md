@@ -1,171 +1,184 @@
 ---
 name: opensearch-dips
 description: >
-  Use when the user asks questions about our OpenSearch cluster's data:
-  distributed traces/spans, slow requests, service errors, application or pod
-  logs, IAM/Keycloak/oauth2-proxy auth events, or OpenSearch cluster/query
-  health. Trigger on keywords like "opensearch", "trace id", "span", "jaeger",
-  "find traces", "slow request", "service errors", "pod logs", "search logs",
-  "auth events", "oauth2-proxy", "who logged in", "top queries", "cluster
-  health", "index mapping". Also trigger whenever an opensearch-mcp tool
-  (ListIndexTool, IndexMappingTool, SearchIndexTool, CountTool, MsearchTool,
-  ClusterHealthTool, GetShardsTool, ExplainTool, GenericOpenSearchApiTool)
-  would be the right way to answer a question, even if the user didn't name
-  OpenSearch explicitly (e.g. "why was this request slow", "did this user
-  authenticate").
+  Use when the user asks questions about our OpenSearch cluster's otel-v1-apm-*
+  data: spans/trace groups, OTel application logs and Kubernetes events, OTel
+  metrics (RED-style ASP.NET Core/k8s/network metrics), or the service
+  dependency map. Trigger on keywords like "opensearch", "otel-v1-apm", "span",
+  "trace group", "service map", "find slow requests", "service errors",
+  "apm logs", "k8s event", "metrics", "aspnetcore metrics". Also trigger
+  whenever an opensearch-mcp tool (ListIndexTool, IndexMappingTool,
+  SearchIndexTool, CountTool, MsearchTool, ClusterHealthTool, GetShardsTool,
+  ExplainTool, GenericOpenSearchApiTool) would be the right way to answer a
+  question about this data, even if the user didn't name OpenSearch explicitly.
 ---
 
-# OpenSearch — our cluster (`opensearch-stack`)
+# OpenSearch — otel-v1-apm-* (our cluster `opensearch-stack`)
 
-This is a map of what's *actually* in our cluster, learned by querying it
-directly — not generic OpenSearch advice. Green, 11 nodes / 6 data nodes.
-Read the index map below before writing any query: several index families
-look similar but use different field-naming conventions, and one is dead.
+Scope: **only the four `otel-v1-apm-*` index patterns.** This cluster also has
+Jaeger trace indices, `otel-logs-*`/`logservice-*` pod logs, and
+`iam-auth-events-*` — deliberately out of scope here; don't reach into them
+for this skill.
 
-Always call `IndexMappingTool` on the specific dated index you're about to hit
-if anything here looks stale — mappings can drift.
+Always call `IndexMappingTool` on the specific index you're about to hit if
+anything here looks stale — mappings drift as new OTel semantic-convention
+attributes land.
 
 ---
 
-## Index map
+## The 4 index patterns
 
-| Pattern | What it is | Volume | Live? |
+| Pattern | What it is | Volume | Notes |
 |---|---|---|---|
-| `jaeger-span-YYYY-MM-DD` | **Distributed traces — the real one.** Every span from every .NET/OTel-instrumented service. | ~600K+ docs/day | ✅ primary |
-| `jaeger-service-YYYY-MM-DD` | Lightweight `serviceName`/`operationName` pairs only, feeds Jaeger UI's dropdowns. | small | Skip for real queries |
-| `otel-logs-YYYY.MM.DD` | Kubernetes pod stdout/stderr, all namespaces, OTel Collector `k8s.*` schema (dots, not `@`). | ~22M docs/day | ✅ primary pod-log firehose |
-| `logservice-YYYY.MM.DD` | Kubernetes pod logs too, but only for a handful of infra namespaces seen so far (`kube-system`, `monitoring`, `messaging`, `iam`, `linkerd`) and a Serilog/CLEF-style schema (`@t`, `@l`, `msg`, `k.ci`/`k.cn`). Mostly collector/infra-component self-logs in samples. | ~3M docs/day | ✅ but narrower scope than `otel-logs-*` — confirm scope before relying on it for app logs |
-| `iam-auth-events-*` | oauth2-proxy / Keycloak edge auth log lines (who authenticated, from where, at what stage). **The place to look for auth investigations.** | moderate | ✅ primary for IAM |
-| `otel-v1-apm-span-*` | OpenSearch's own Trace Analytics (Data Prepper) span format. | 8 docs total, mostly null | ❌ dead — use `jaeger-span-*` instead |
-| `otel-v1-apm-logs-otel-*` | Data Prepper OTel logs format (`resource.attributes.*` / `log.attributes.*`, `@`-flattened). | ~200K docs/day | ✅ live, secondary log path |
-| `otel-v1-apm-metrics-*` | Data Prepper OTel metrics — ASP.NET Core / k8s / network RED-style metrics per request. | ~18M docs/day | ✅ live, very high volume |
-| `otel-v1-apm-service-map` | Precomputed service dependency edges (source→destination). | small | ✅ for service-map questions |
-| `metrics-otel-v1-*` | A separate data-stream-based metrics index. | 0 docs | ❌ dead, ignore |
-| `security-auditlog-YYYY.MM.DD` | OpenSearch Security plugin's own audit log — who queried *the cluster*, not the app. | — | Cluster security audits only |
-| `top_queries-YYYY.MM.DD-*` | OpenSearch Query Insights — slow/expensive queries *against this cluster*. | — | OpenSearch perf tuning only |
-| `.plugins-ml-*`, `.plugins-flow-framework-*`, `.opensearch-observability`, `.opendistro_security`, `.opendistro-job-scheduler-lock`, `.kibana_1`, `.ql-datasources` | Internal system indices. `.ql-datasources` is empty — no external PPL/SQL federated datasources configured. | — | Never query directly |
-| `opensearch_dashboards_sample_data_*`, `test-d1-*` | OSD demo data / empty scratch indices. | — | Ignore |
+| `otel-v1-apm-span-*` | Rollover-numbered (`-000001` … `-000041`, not date-suffixed) Data Prepper span/trace-group index. | **~3,800 docs total across all 41 rollover indices** | Low volume and sparse — most sampled docs only populate `serviceName`, `traceGroupName`, `hashId`; `kind`/`destination`/`target` are frequently `null`. Treat as a coarse "what talked to what" signal, not full per-request span detail. |
+| `otel-v1-apm-logs-otel-*` | Date-suffixed (`YYYY.MM.DD`) Data Prepper OTel logs. Carries both app log lines and raw **Kubernetes Event objects** (`log.attributes.k8s@event@*`). | ~200K docs/day | Live, the most reliable of the four for day-to-day queries. |
+| `otel-v1-apm-metrics-*` | Date-suffixed (`YYYY.MM.DD`) Data Prepper OTel metrics — ASP.NET Core request metrics, k8s/network/process metrics, per-request histograms. | ~18.5M docs/day | Very high volume — always filter by time range + `serviceName` before scanning. |
+| `otel-v1-apm-service-map` | Single static index (no date/rollover suffix) — precomputed service dependency edges. | small | Just pull it all; no time filter needed. |
 
-Trace/log/audit indices are **date-suffixed and roll daily** — don't hardcode
-a date. Use `ListIndexTool` with a pattern (e.g. `jaeger-span-*`) to see what
-exists, or query a wildcard directly (e.g. `jaeger-span-2026-08-*` for a
-month, `otel-logs-2026.08.1*` for a few days) and let OpenSearch resolve it.
-**Always add a timestamp range filter on wildcard queries** — `otel-logs-*`
-and `otel-v1-apm-metrics-*` alone run tens of millions of docs/day.
+`otel-v1-apm-span-*` and `otel-v1-apm-logs-otel-*`/`otel-v1-apm-metrics-*` use
+different suffix schemes — span indices are numbered rollovers, the other two
+are calendar-dated. Use `ListIndexTool` with the pattern
+(`otel-v1-apm-span-*`, `otel-v1-apm-logs-otel-*`, `otel-v1-apm-metrics-*`) to
+see what currently exists rather than guessing a suffix.
 
 ---
 
-## Field-naming gotchas (read this before writing DSL)
+## Field-naming gotchas
 
-1. **Dot-to-`@` flattening.** In `otel-v1-apm-*` and `iam-auth-events-*`,
-   OTel attribute/resource keys have every `.` replaced with `@` when
-   promoted to a field name: `k8s.namespace.name` → `k8s@namespace@name`,
-   `http.response.status_code` → `http@response@status_code`. **This does
-   NOT apply to `otel-logs-*`**, which keeps literal dots (`k8s.namespace.name`,
-   `container.image.name`) — check which family you're in before guessing a
-   field name.
+1. **Dot-to-`@` flattening, consistently across all four.** OTel
+   attribute/resource keys have every `.` replaced with `@` when promoted to
+   a field name: `k8s.namespace.name` → `k8s@namespace@name`,
+   `http.response.status_code` → `http@response@status_code`,
+   `service.name` → `service@name`. This is uniform across
+   `resource.attributes.*`, `log.attributes.*`, and
+   `attributes.metric.attributes.*` / `attributes.resource.attributes.*` — no
+   family-specific exceptions within this scope.
 
-2. **`env` means different things in different indices.** In
-   `jaeger-span-*` (process tags) and `otel-v1-apm-metrics-*` (resource
-   attributes), `env` is the **deployment environment** (e.g. `thor`, `ak02`,
-   `production`, `sldev`). In `logservice-*`, top-level `env` is the
-   **Kubernetes namespace** (`kube-system`, `monitoring`, `iam`, ...). Don't
-   assume — check the index family first.
+2. **Metrics attributes are nested two levels deep.** In
+   `otel-v1-apm-metrics-*`, per-request dimensions live under
+   `attributes.metric.attributes.<key>` (e.g.
+   `attributes.metric.attributes.http@response@status_code`,
+   `attributes.metric.attributes.http@route`), while resource/infra dimensions
+   live under `attributes.resource.attributes.<key>` (e.g.
+   `attributes.resource.attributes.k8s@pod@name`,
+   `attributes.resource.attributes.deployment@environment`,
+   `attributes.resource.attributes.aid`). Don't confuse the two paths — a
+   query for `env` needs `attributes.resource.attributes.env`, not
+   `attributes.metric.attributes.env`.
 
-3. **Jaeger tags are nested — term queries on a dotted path won't match.**
-   Span attributes live in a `tags` nested array (`{"key":..., "value":...,
-   "tagType":...}`), and process-level attributes (`env`, `aid`, `host.name`,
-   `service.instance.id`, `dotnet-core`) live in `process.tags`, same shape.
-   A flat `tag.<key>` field sometimes exists (e.g. `tag.span@kind`) but is
-   **only sparsely populated** — don't rely on it for filtering. Always use a
-   `nested` query (see recipes below) to filter by any tag/process-tag.
+3. **No trace-id exemplar linking metrics to spans.** Unlike some OTel
+   backends, `otel-v1-apm-metrics-*` documents here have no `exemplar`/
+   `traceId` field — you cannot jump from a slow metric bucket straight to
+   the causing trace. Correlate instead via shared dimensions: `serviceName`
+   + `attributes.resource.attributes.k8s@pod@name` +a matching time window.
 
-4. **Jaeger's dynamic template still promotes some tags to `tag.<key>`** with
-   dots turned to `@` (e.g. `tag.db@system`, `tag.http@method`) — these are
-   leftover/partial from the ingest pipeline and inconsistent across docs.
-   Treat them as a fast-path optimization to try first with a fallback to the
-   nested query, never as the only filter.
+4. **`aid`** is our internal numeric application ID
+   (`attributes.resource.attributes.aid` in metrics; also present in span/log
+   resource attributes) — a stable join key across the four indices when
+   `serviceName` strings don't line up exactly.
 
-5. **Timestamp fields differ by family:**
-   - `jaeger-span-*`: `startTimeMillis` (epoch millis, use for range queries),
-     `startTime` (epoch **micros**, don't range-filter on this directly).
-     `duration` is in **microseconds**.
-   - `otel-logs-*`, `otel-v1-apm-logs-otel-*`, `iam-auth-events-*`,
-     `logservice-*`: `@timestamp` (ISO 8601) — use
-     `"format": "strict_date_optional_time||epoch_millis"` per the tool's own
-     guidance.
-   - `otel-v1-apm-span-*`: `startTime`/`endTime` are `date_nanos`.
+5. **Timestamp fields differ per index:**
+   - `otel-v1-apm-span-*`: `startTime` / `endTime` are `date_nanos`. Range
+     queries need nanosecond epoch values or ISO8601 with nanos.
+   - `otel-v1-apm-logs-otel-*`: `time` and `observedTimestamp` are standard
+     `date` (ISO 8601) — use
+     `"format": "strict_date_optional_time||epoch_millis"`.
+   - `otel-v1-apm-metrics-*`: `startTime` and `time` are standard `date`.
+   - `otel-v1-apm-service-map`: no timestamp — it's a precomputed snapshot.
 
-6. **`aid`** is our internal numeric application ID, tagged consistently
-   across `jaeger-span-*` process tags, `otel-v1-apm-metrics-*` resource
-   attributes, and `logservice-*` — useful as a stable join key across index
-   families when `serviceName` strings differ slightly.
+6. **`otel-v1-apm-span-*` sparsity is real, not a sampling artifact** —
+   confirmed via `CountTool` across the full rollover set (~3,800 docs total,
+   `GetShardsTool` shows single-digit doc counts per current write shard). If
+   the user needs full per-request trace detail this index alone likely
+   won't have it; say so rather than presenting a `null`-heavy doc as if it
+   were complete.
 
 ---
 
 ## Query recipes
 
-`SearchIndexTool`'s `query_dsl` is the **entire** search request body, not
-just the `query` clause — you can include `size`, `_source`, `aggs`, `sort` as
-sibling keys.
+`SearchIndexTool`'s `query_dsl` is the **entire** search request body — you
+can add `size`, `_source`, `aggs`, `sort` as sibling keys next to `query`.
 
-### Look up a trace by ID
-
-```json
-{"query": {"term": {"traceID": "cb15507c2001f6086b90aca391724d51"}}, "size": 100, "sort": [{"startTimeMillis": "asc"}]}
-```
-Index: `jaeger-span-*` (or narrow to the known day for speed).
-
-### Slow spans for a service in the last hour
+### Trace groups / spans for a service
 
 ```json
 {
-  "query": {
-    "bool": {
-      "must": [
-        {"term": {"process.serviceName": "HealthRecord-Indexer"}},
-        {"range": {"startTimeMillis": {"gte": "now-1h", "lte": "now", "format": "epoch_millis||strict_date_optional_time"}}},
-        {"range": {"duration": {"gte": 2000000}}}
-      ]
-    }
-  },
-  "size": 50,
-  "sort": [{"duration": "desc"}]
+  "query": {"term": {"serviceName": "cdr-etl-orchestrator"}},
+  "size": 50
 }
 ```
-`duration` is microseconds — `2000000` = 2s.
+Index: `otel-v1-apm-span-*`. Expect sparse fields — check `traceGroupName`
+and `hashId` before assuming `kind`/`destination`/`target` are populated.
 
-### Filter spans by a process tag (e.g. deployment env) — nested query required
+### Kubernetes events (e.g. OOMKilled, Evicted) from the logs index
 
 ```json
 {
   "query": {
     "bool": {
       "must": [
-        {"term": {"process.serviceName": "cdr-etl-orchestrator"}},
-        {"nested": {"path": "process.tags", "query": {"bool": {"must": [
-          {"term": {"process.tags.key": "env"}},
-          {"term": {"process.tags.value": "thor"}}
-        ]}}}}
-      ]
+        {"term": {"log.attributes.k8s@event@reason": "OOMKilling"}},
+        {"term": {"resource.attributes.k8s@namespace@name": "iam"}}
+      ],
+      "filter": [{"range": {"time": {"gte": "now-24h", "format": "strict_date_optional_time"}}}]
+    }
+  },
+  "sort": [{"time": "desc"}]
+}
+```
+Index: `otel-v1-apm-logs-otel-*`.
+
+### App log search by severity + free text
+
+```json
+{
+  "query": {
+    "bool": {
+      "must": [
+        {"term": {"severityText": "ERROR"}},
+        {"match": {"body": "timeout"}}
+      ],
+      "filter": [{"range": {"time": {"gte": "now-1h", "format": "strict_date_optional_time"}}}]
     }
   }
 }
 ```
-Same pattern for span-level attributes, just swap `process.tags` → `tags`
-(e.g. filter `db.system` = `oracle`).
+Index: `otel-v1-apm-logs-otel-*`.
 
-### Error spans for a service
+### RED metrics — error rate / status codes for a service in the last hour
+
+```json
+{
+  "size": 0,
+  "query": {
+    "bool": {
+      "must": [
+        {"term": {"serviceName": "ehrstore"}},
+        {"range": {"time": {"gte": "now-1h", "format": "strict_date_optional_time"}}}
+      ]
+    }
+  },
+  "aggs": {
+    "by_status": {
+      "terms": {"field": "attributes.metric.attributes.http@response@status_code", "size": 20}
+    }
+  }
+}
+```
+Index: `otel-v1-apm-metrics-*`. Use `aggs`, not raw doc scans — this index is
+18.5M docs/day.
+
+### Filter metrics by deployment environment or pod
 
 ```json
 {
   "query": {
     "bool": {
       "must": [
-        {"term": {"process.serviceName": "ehrstore"}},
-        {"nested": {"path": "tags", "query": {"term": {"tags.key": "otel.status_code"}}}}
-      ],
-      "filter": [{"nested": {"path": "tags", "query": {"term": {"tags.value": "ERROR"}}}}]
+        {"term": {"serviceName": "HealthRecord-Indexer"}},
+        {"term": {"attributes.resource.attributes.deployment@environment": "thor"}}
+      ]
     }
   }
 }
@@ -176,80 +189,40 @@ Same pattern for span-level attributes, just swap `process.tags` → `tags`
 ```json
 {"query": {"match_all": {}}, "size": 100}
 ```
-Index: `otel-v1-apm-service-map` — small, just pull it all.
-
-### Pod/application logs by namespace + text search
-
-```json
-{
-  "query": {
-    "bool": {
-      "must": [
-        {"term": {"k8s.namespace.name": "iam"}},
-        {"match": {"Body.value": "error"}}
-      ],
-      "filter": [{"range": {"@timestamp": {"gte": "now-1h", "format": "strict_date_optional_time"}}}]
-    }
-  }
-}
-```
-Index: `otel-logs-*`. Note plain dots here, not `@`.
-
-### IAM / oauth2-proxy auth events for a user
-
-```json
-{
-  "query": {
-    "bool": {
-      "must": [{"match": {"body": "sithmi.s@creativesoftware.com"}}],
-      "filter": [{"range": {"@timestamp": {"gte": "now-24h", "format": "strict_date_optional_time"}}}]
-    }
-  }
-}
-```
-Index: `iam-auth-events-*`. `body` holds the raw oauth2-proxy access-log line
-(client IP, session hash, user email, HTTP verb, path, status, latency).
-`auth_stage` (e.g. `edge`) and `serviceName` are also useful filters.
-
-### Cluster / query-performance health
-
-```
-ClusterHealthTool           → status, node counts, shard counts
-GetShardsTool(index)        → per-shard state for one index
-top_queries-* via SearchIndexTool → find OpenSearch's own slow queries
-```
+Index: `otel-v1-apm-service-map` — small static index, no date suffix, just
+pull it all.
 
 ---
 
 ## Tool cheat sheet
 
-- **`ListIndexTool`** — resolve today's/this-week's actual index names before
-  querying a daily-rolling family; pass `include_detail: false` for a quick
-  name-only list.
-- **`IndexMappingTool`** — call on the specific dated index before writing
-  new DSL against a field you haven't confirmed; mappings can drift day to
-  day (e.g. new `resource.attributes.*` keys appear as new OTel semantic
-  conventions land).
-- **`SearchIndexTool`** — main query tool; `size` caps at 100 — use `CountTool`
-  first if you just need a number, and add `aggs` instead of pulling raw docs
-  for anything cardinality-shaped ("how many errors", "which services").
-- **`CountTool`** — cheap existence/volume check before running an expensive
-  wildcard search.
-- **`MsearchTool`** — batch the same query across several dated indices in
-  one round trip (e.g. last 7 days of `jaeger-span-YYYY-MM-DD`) instead of
-  relying on wildcard expansion.
+- **`ListIndexTool`** — resolve which rollover (`-000041`) or dated
+  (`2026.08.11`) index currently exists before hardcoding a suffix; pass
+  `include_detail: false` for a quick name-only list.
+- **`IndexMappingTool`** — call on the specific index before writing new DSL
+  against a field you haven't confirmed; `attributes.metric.attributes.*` and
+  `attributes.resource.attributes.*` grow as new OTel semantic-convention
+  attributes land.
+- **`SearchIndexTool`** — main query tool; `size` caps at 100 — use
+  `CountTool` first if you just need a number, and prefer `aggs` over raw doc
+  scans on `otel-v1-apm-metrics-*` (18.5M docs/day).
+- **`CountTool`** — cheap existence/volume check before an expensive wildcard
+  search; this is how the span index's sparsity above was confirmed.
+- **`MsearchTool`** — batch the same query across several dated
+  `otel-v1-apm-logs-otel-*`/`otel-v1-apm-metrics-*` indices in one round trip
+  instead of relying on wildcard expansion.
 - **`ExplainTool`** — why didn't doc X match query Y — rarely needed outside
   relevance debugging.
 - **`GenericOpenSearchApiTool`** — escape hatch for anything without a
-  dedicated tool (`_cat/indices`, `_alias`, ILM/ISM policy inspection, etc.).
+  dedicated tool (`_cat/indices`, `_alias`, ILM/ISM rollover policy for
+  `otel-v1-apm-span-*`, etc.).
 
 ---
 
 ## Works well with
 
 - `opensearch@observability` skill — generic PPL/PromQL patterns (RED
-  metrics, SLO/SLI, correlation) once you know which index/field to point it at
-- `k8s-debug` — cross-check pod/namespace names found in `otel-logs-*` or
-  `logservice-*` against live cluster state
-- `keycloak-test` — `iam-auth-events-*` is the data trail for Keycloak/
-  oauth2-proxy investigations that skill's test runs surface
+  metrics, SLO/SLI, correlation) once you know which `otel-v1-apm-*`
+  index/field to point it at
+- `k8s-debug` — cross-check pod/namespace names found in
+  `otel-v1-apm-logs-otel-*` against live cluster state
