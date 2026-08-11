@@ -68,6 +68,15 @@ see what currently exists rather than guessing a suffix.
    query for `env` needs `attributes.resource.attributes.env`, not
    `attributes.metric.attributes.env`.
 
+   **This two-level nesting is specific to `otel-v1-apm-metrics-*` — don't
+   carry it over to `otel-v1-apm-logs-otel-*`.** Logs use the shallower
+   `resource.attributes.<key>` (no leading `attributes.`), e.g.
+   `resource.attributes.userid`, `resource.attributes.k8s@namespace@name`.
+   Applying the metrics-style deeper path to a logs query silently returns
+   zero hits — indistinguishable at a glance from a wrong field name or a
+   missing `.keyword`. If a query against `otel-v1-apm-logs-otel-*` comes
+   back empty, check the path depth before anything else.
+
 3. **No trace-id exemplar linking metrics to spans.** Unlike some OTel
    backends, `otel-v1-apm-metrics-*` documents here have no `exemplar`/
    `traceId` field — you cannot jump from a slow metric bucket straight to
