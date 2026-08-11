@@ -279,13 +279,3 @@ pull it all.
 - **`GenericOpenSearchApiTool`** — escape hatch for anything without a
   dedicated tool (`_cat/indices`, `_alias`, ILM/ISM rollover policy for
   `otel-v1-apm-span-*`, etc.).
-
----
-
-## Works well with
-
-- `opensearch@observability` skill — generic PPL/PromQL patterns (RED
-  metrics, SLO/SLI, correlation) once you know which `otel-v1-apm-*`
-  index/field to point it at
-- `k8s-debug` — cross-check pod/namespace names found in
-  `otel-v1-apm-logs-otel-*` against live cluster state

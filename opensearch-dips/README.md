@@ -52,10 +52,3 @@ per-user activity in the DIPS Arena Desktop Client logs.
 Jaeger trace indices, `otel-logs-*`/`logservice-*` pod logs, and
 `iam-auth-events-*` also exist on this cluster but are deliberately excluded
 from this skill.
-
-## Works well with
-
-- `opensearch@observability` — generic PPL/PromQL reference for RED metrics,
-  SLO/SLI, correlation
-- `k8s-debug` — cross-reference pod names / namespaces found in
-  `otel-v1-apm-logs-otel-*` with live cluster state
