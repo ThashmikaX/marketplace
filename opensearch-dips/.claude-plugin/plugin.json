@@ -1,6 +1,6 @@
 {
   "name": "opensearch-dips",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tailored guide to our OpenSearch cluster's otel-v1-apm-* indices (spans, logs, metrics, service map): real mappings and gotchas so questions about that data get answered fast via the opensearch-mcp tools.",
   "author": {
     "name": "DIPS AS"
