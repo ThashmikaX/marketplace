@@ -1,0 +1,10 @@
+{
+  "name": "opensearch-dips",
+  "version": "0.1.0",
+  "description": "Tailored guide to our OpenSearch cluster (opensearch-stack): the real index map, field mappings, and gotchas, so questions about traces, logs, IAM auth events, and cluster health get answered fast via the opensearch-mcp tools.",
+  "author": {
+    "name": "DIPS AS"
+  },
+  "keywords": ["opensearch", "mcp", "observability", "traces", "jaeger", "otel", "logs", "iam"],
+  "license": "UNLICENSED"
+}

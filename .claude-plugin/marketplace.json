@@ -12,6 +12,10 @@
     {
       "name": "keycloak-test",
       "source": "./keycloak-test"
+    },
+    {
+      "name": "opensearch-dips",
+      "source": "./opensearch-dips"
     }
   ]
 }
