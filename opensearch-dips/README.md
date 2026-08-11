@@ -12,13 +12,16 @@ answered correctly on the first query instead of guessing field names.
 
 Triggered when the user asks about our `otel-v1-apm-*` data: spans/trace
 groups, OTel application logs and Kubernetes events, OTel metrics
-(ASP.NET Core/k8s/network RED-style), or the service dependency map.
+(ASP.NET Core/k8s/network RED-style), the service dependency map, or
+per-user activity in the DIPS Arena Desktop Client logs.
 
 **Trigger examples:**
 - "find slow requests for ehrstore in the last hour"
 - "any OOMKilled events in the iam namespace"
 - "error rate by status code for HealthRecord-Indexer"
 - "show me the service dependency map"
+- "what did user 2014723 do in the last hour"
+- "most active users today"
 
 ## Prerequisites
 
@@ -39,6 +42,10 @@ groups, OTel application logs and Kubernetes events, OTel metrics
 - The different suffix schemes: numbered rollover (`-000041`) for spans vs.
   calendar-dated (`2026.08.11`) for logs/metrics vs. no suffix for the
   service map
+- That `resource.attributes.userid`/`username` (DIPS Arena Desktop Client
+  activity) exist only in `otel-v1-apm-logs-otel-*` — confirmed 0 hits in the
+  metrics and span indices — and that `traceId`/`spanId` are empty strings on
+  those same docs, so there's no direct join from a user's log line to a span
 
 ## Out of scope (by request)
 

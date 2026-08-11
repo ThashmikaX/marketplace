@@ -3,10 +3,12 @@ name: opensearch-dips
 description: >
   Use when the user asks questions about our OpenSearch cluster's otel-v1-apm-*
   data: spans/trace groups, OTel application logs and Kubernetes events, OTel
-  metrics (RED-style ASP.NET Core/k8s/network metrics), or the service
-  dependency map. Trigger on keywords like "opensearch", "otel-v1-apm", "span",
-  "trace group", "service map", "find slow requests", "service errors",
-  "apm logs", "k8s event", "metrics", "aspnetcore metrics". Also trigger
+  metrics (RED-style ASP.NET Core/k8s/network metrics), the service
+  dependency map, or per-user activity in the DIPS Arena Desktop Client logs
+  (userid/username). Trigger on keywords like "opensearch", "otel-v1-apm",
+  "span", "trace group", "service map", "find slow requests", "service
+  errors", "apm logs", "k8s event", "metrics", "aspnetcore metrics", "which
+  user", "user activity", "userid", "what did this user do". Also trigger
   whenever an opensearch-mcp tool (ListIndexTool, IndexMappingTool,
   SearchIndexTool, CountTool, MsearchTool, ClusterHealthTool, GetShardsTool,
   ExplainTool, GenericOpenSearchApiTool) would be the right way to answer a
@@ -31,7 +33,7 @@ attributes land.
 | Pattern | What it is | Volume | Notes |
 |---|---|---|---|
 | `otel-v1-apm-span-*` | Rollover-numbered (`-000001` … `-000041`, not date-suffixed) Data Prepper span/trace-group index. | **~3,800 docs total across all 41 rollover indices** | Low volume and sparse — most sampled docs only populate `serviceName`, `traceGroupName`, `hashId`; `kind`/`destination`/`target` are frequently `null`. Treat as a coarse "what talked to what" signal, not full per-request span detail. |
-| `otel-v1-apm-logs-otel-*` | Date-suffixed (`YYYY.MM.DD`) Data Prepper OTel logs. Carries both app log lines and raw **Kubernetes Event objects** (`log.attributes.k8s@event@*`). | ~200K docs/day | Live, the most reliable of the four for day-to-day queries. |
+| `otel-v1-apm-logs-otel-*` | Date-suffixed (`YYYY.MM.DD`) Data Prepper OTel logs. Carries app log lines, raw **Kubernetes Event objects** (`log.attributes.k8s@event@*`), and — from the DIPS Arena Desktop Client via `instrumentationScope.name: "otlp/webhookevent"` — **per-user activity logs** with `resource.attributes.userid` / `resource.attributes.username`. | ~200K docs/day | Live, the most reliable of the four for day-to-day queries. The only one of the four with user-identity fields (confirmed 0 hits for `userid` in `otel-v1-apm-metrics-*` and `otel-v1-apm-span-*`). |
 | `otel-v1-apm-metrics-*` | Date-suffixed (`YYYY.MM.DD`) Data Prepper OTel metrics — ASP.NET Core request metrics, k8s/network/process metrics, per-request histograms. | ~18.5M docs/day | Very high volume — always filter by time range + `serviceName` before scanning. |
 | `otel-v1-apm-service-map` | Single static index (no date/rollover suffix) — precomputed service dependency edges. | small | Just pull it all; no time filter needed. |
 
@@ -92,6 +94,32 @@ see what currently exists rather than guessing a suffix.
    the user needs full per-request trace detail this index alone likely
    won't have it; say so rather than presenting a `null`-heavy doc as if it
    were complete.
+
+7. **User identity (`userid`/`username`) exists in exactly one place, and
+   only partially links to traces.** In `otel-v1-apm-logs-otel-*`, docs from
+   `instrumentationScope.name: "otlp/webhookevent"` (DIPS Arena Desktop
+   Client) carry `resource.attributes.userid` and
+   `resource.attributes.username` — both `text` with a `.keyword` subfield,
+   so use `.keyword` for `term`/`terms`/`aggs`, plain field for `match`.
+   Also promoted alongside them: `resource.attributes.sid` (session id),
+   `resource.attributes.aid`, `resource.attributes.env`,
+   `resource.attributes.host@name`, `resource.attributes.logger`. **Not**
+   promoted — confirmed by an empty `terms` agg on
+   `resource.attributes.hospital.keyword` despite `hospital` being present in
+   every doc's raw body: `hospital`, `department`, `userroleid`,
+   `userroleposition`, and the log's own trace/span correlation fields `trid`/
+   `spid`. To get those, `match`/`wildcard` the `body` field (it's the raw
+   JSON string) or parse it after fetching.
+   On these same docs the **top-level `traceId`/`spanId` are empty strings**
+   — confirmed by direct inspection, not derived — so you cannot join a
+   user's desktop-client log line to `otel-v1-apm-span-*` via the indexed
+   `traceId` field. If you need that link, extract `trid`/`spid` from `body`
+   and compare by value, and treat it as unverified until you confirm the ID
+   format matches. Absent that, correlate a user's activity to spans/metrics
+   by `resource.attributes.env` + `resource.attributes.host@name` + a
+   matching time window instead — there is no direct `userid` field on
+   `otel-v1-apm-span-*` or `otel-v1-apm-metrics-*` (both confirmed 0 via
+   `CountTool`).
 
 ---
 
@@ -183,6 +211,41 @@ Index: `otel-v1-apm-metrics-*`. Use `aggs`, not raw doc scans — this index is
   }
 }
 ```
+
+### Activity log for a specific user
+
+```json
+{
+  "query": {
+    "bool": {
+      "must": [{"term": {"resource.attributes.userid.keyword": "2014723"}}],
+      "filter": [{"range": {"time": {"gte": "now-24h", "format": "strict_date_optional_time"}}}]
+    }
+  },
+  "sort": [{"time": "asc"}]
+}
+```
+Index: `otel-v1-apm-logs-otel-*`. Match by `userid` (stable numeric ID) rather
+than `username` when you have it — usernames are shared domain accounts, IDs
+aren't. Read `msg`/other fields out of the raw `body` JSON string for detail
+the promoted fields don't carry (`hospital`, `department`, `trid`, `spid`).
+
+### Most active users in a time window
+
+```json
+{
+  "size": 0,
+  "query": {"range": {"time": {"gte": "now-1h", "format": "strict_date_optional_time"}}},
+  "aggs": {
+    "by_user": {
+      "terms": {"field": "resource.attributes.username.keyword", "size": 20}
+    }
+  }
+}
+```
+Index: `otel-v1-apm-logs-otel-*`. Only covers users of the DIPS Arena Desktop
+Client (the `otlp/webhookevent` source) — not every user-facing app is
+instrumented into this index.
 
 ### Service dependency map
 
